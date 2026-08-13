@@ -1,4 +1,4 @@
-name: Build Qatar Job App
+name: Build Qatar Job AAB
 
 on:
   push:
@@ -21,26 +21,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download Gradle
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
-          unzip -q gradle-8.11.1-bin.zip
-          echo "$PWD/gradle-8.11.1/bin" >> $GITHUB_PATH
-
       - name: Detect package name
         run: |
           PACKAGE=$(grep -m1 '^package ' MainActivity.java | sed 's/package //;s/;//' | tr -d ' ')
+
           if [ -z "$PACKAGE" ]; then
             PACKAGE="com.qatarjob.app"
           fi
+
           echo "PACKAGE=$PACKAGE" >> $GITHUB_ENV
           echo "Using package: $PACKAGE"
 
       - name: Create Android project
         run: |
           mkdir -p app/src/main/java
-          mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -65,7 +61,7 @@ jobs:
 
           cat > build.gradle <<'EOF'
           plugins {
-              id 'com.android.application' version '8.9.2' apply false
+              id 'com.android.application' version '8.7.3' apply false
           }
           EOF
 
@@ -76,43 +72,27 @@ jobs:
 
           android {
               namespace "$PACKAGE"
-              compileSdk 36
+              compileSdk 35
 
               defaultConfig {
                   applicationId "$PACKAGE"
                   minSdk 23
-                  targetSdk 36
+                  targetSdk 35
                   versionCode 1
                   versionName "1.0"
-              }
-
-              signingConfigs {
-                  release {
-                      storeFile file("qatar-job-release.jks")
-                      storePassword "QatarJob2026!"
-                      keyAlias "qatarjob"
-                      keyPassword "QatarJob2026!"
-                  }
               }
 
               buildTypes {
                   release {
                       minifyEnabled false
-                      signingConfig signingConfigs.release
+                      shrinkResources false
                   }
               }
           }
           EOF
 
-          cp MainActivity.java app/src/main/java/
-
-          if [ -f ic_launcher.png ]; then
-            cp ic_launcher.png app/src/main/res/drawable/ic_launcher.png
-          fi
-
-          if [ -f ic_launcher_round.png ]; then
-            cp ic_launcher_round.png app/src/main/res/drawable/ic_launcher_round.png
-          fi
+          mkdir -p app/src/main/java/$(echo "$PACKAGE" | tr '.' '/')
+          cp MainActivity.java app/src/main/java/$(echo "$PACKAGE" | tr '.' '/')/MainActivity.java
 
       - name: Create resources
         run: |
@@ -142,7 +122,7 @@ jobs:
           </resources>
           EOF
 
-      - name: Create AndroidManifest
+      - name: Create Manifest
         run: |
           cat > app/src/main/AndroidManifest.xml <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -151,11 +131,10 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:label="@string/app_name"
+                  android:label="Qatar Job"
                   android:theme="@style/Theme.QatarJob"
-                  android:usesCleartextTraffic="false"
                   android:icon="@drawable/ic_launcher"
-                  android:roundIcon="@drawable/ic_launcher_round">
+                  android:roundIcon="@drawable/ic_launcher">
 
                   <activity
                       android:name="$PACKAGE.MainActivity"
@@ -173,22 +152,24 @@ jobs:
           </manifest>
           EOF
 
-      - name: Generate release keystore
+      - name: Add App Icon
         run: |
-          keytool -genkeypair \
-            -v \
-            -keystore qatar-job-release.jks \
-            -storepass 'QatarJob2026!' \
-            -keypass 'QatarJob2026!' \
-            -alias qatarjob \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Qatar Job, OU=Qatar Job, O=Qatar Job, L=Doha, ST=Doha, C=QA"
+          if [ -f ic_launcher.png ]; then
+            cp ic_launcher.png app/src/main/res/drawable/ic_launcher.png
+          else
+            echo "Icon not found, creating simple fallback"
+          fi
 
-      - name: Build signed AAB
+      - name: Setup Gradle
         run: |
-          gradle wrapper --gradle-version 8.11.1
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> $GITHUB_PATH
+
+      - name: Build AAB
+        run: |
+          gradle wrapper --gradle-version 8.9
+          chmod +x gradlew
           ./gradlew bundleRelease --stacktrace
 
       - name: Upload AAB
@@ -196,9 +177,3 @@ jobs:
         with:
           name: Qatar-Job-AAB
           path: app/build/outputs/bundle/release/app-release.aab
-
-      - name: Upload signing key
-        uses: actions/upload-artifact@v4
-        with:
-          name: Qatar-Job-Signing-Key
-          path: qatar-job-release.jks
