@@ -1,0 +1,162 @@
+name: Build Qatar Job App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Qatar Job APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> $GITHUB_PATH
+
+      - name: Detect package name
+        run: |
+          PACKAGE=$(grep -m1 '^package ' MainActivity.java | sed 's/package //;s/;//' | tr -d ' ')
+          if [ -z "$PACKAGE" ]; then
+            PACKAGE="com.qatarjob.app"
+          fi
+          echo "PACKAGE=$PACKAGE" >> $GITHUB_ENV
+          echo "Using package: $PACKAGE"
+
+      - name: Create Android project
+        run: |
+          mkdir -p app/src/main/java
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "QatarJob"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<EOF
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace "$PACKAGE"
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId "$PACKAGE"
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName "1.0"
+              }
+          }
+          EOF
+
+          cp MainActivity.java app/src/main/java/
+          cp activity_main.xml app/src/main/res/layout/activity_main.xml 2>/dev/null || true
+          cp ic_launcher.png app/src/main/res/drawable/ic_launcher.png 2>/dev/null || true
+
+      - name: Create resources
+        run: |
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">Qatar Job</string>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+              <color name="purple_500">#7A003C</color>
+              <color name="purple_700">#5A002D</color>
+              <color name="white">#FFFFFF</color>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/themes.xml <<'EOF'
+          <resources>
+              <style name="Theme.QatarJob" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">@color/purple_500</item>
+                  <item name="android:navigationBarColor">@color/purple_700</item>
+                  <item name="android:statusBarColor">@color/purple_700</item>
+              </style>
+          </resources>
+          EOF
+
+      - name: Create AndroidManifest
+        run: |
+          cat > app/src/main/AndroidManifest.xml <<EOF
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Qatar Job"
+                  android:theme="@style/Theme.QatarJob"
+                  android:icon="@drawable/ic_launcher"
+                  android:roundIcon="@drawable/ic_launcher">
+
+                  <activity
+                      android:name="$PACKAGE.MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+      - name: Build APK
+        run: |
+          gradle wrapper --gradle-version 8.9
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Qatar-Job-App
+          path: app/build/outputs/apk/debug/app-debug.apk
